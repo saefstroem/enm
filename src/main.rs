@@ -5,7 +5,7 @@ use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     ChaCha20Poly1305, Key, Nonce,
 };
-use db::{read_db, setup_db, YaepmDb};
+use db::{YaepmDb};
 use eframe::egui::{self, Color32, RichText, TextEdit, Ui, Widget};
 use std::{
     borrow::Cow,
@@ -17,7 +17,8 @@ use std::{
     thread::{self, sleep},
     time::{Duration, SystemTime},
 };
-use ui::heading::draw_heading;
+use ui::{create::draw_create, heading::draw_heading, home::draw_home};
+use zeroize::Zeroize;
 
 mod db;
 mod ui;
@@ -43,31 +44,48 @@ fn decrypt(buffer:IVec,secret:String) {
     assert_eq!(&plaintext, b"plaintext message");
 } */
 
+// All but Home should have payloads. CreateNote should have four mutable strings called note_name, note_content, password, and password_confirmation. DecryptNote should have a string called note_name and password. Error should have a string called error_message
+pub enum UiState {
+    Home,
+    CreateNote,
+    DecryptNote,
+    Error(&'static str),
+}
+#[derive(Default)]
+pub struct NewNote {
+    name: String,
+    content: String,
+    password: String,
+}
+
+
+#[derive(Default)]
+pub struct ExistingNote {
+    name: String,
+    content: Vec<u8>,
+    password: String,
+    nonce: u64,
+}
+
+
+
 fn main() -> eframe::Result<()> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let user_home = env::var("HOME").unwrap_or_default();
-    let yaepm_home = env::var("YAEPM_HOME").unwrap_or(format!("{}/yaepm.txt", user_home));
+    let yaepm_home = env::var("YAEPM_HOME").unwrap_or(format!("{}/yaepm", user_home));
     let yaepm_tree = env::var("YAEPM_TREE").unwrap_or("passwords".to_owned());
+    let db=sled::open(yaepm_home).expect("Could not open yaepm database");
+    let tree=db.open_tree(yaepm_tree).expect(&format!("Could not open tree"));
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 320.0]),
+        viewport: egui::ViewportBuilder::default(),
         ..Default::default()
     };
 
-    let encrypted_map: HashMap<String, String> = HashMap::new();
+    let mut ui_state = UiState::Home;
+    let mut new_note=NewNote::default();
+    let mut existing_note=ExistingNote::default();
 
-    let mut note_name: String = String::new();
-    let mut note_content: String = String::new();
-    let mut create_new_note = false;
-
-    let mut password: Cow<str> = Cow::from("");
-    let mut password_confirmation: Cow<str> = Cow::from("");
-
-    let mut fatal_msg = "";
-    let mut fatal = false;
-    let mut db: YaepmDb = YaepmDb {
-        notes: HashMap::new(),
-    };
 
     eframe::run_simple_native(
         "yaepm - Yet Another Encrypted Password Manager",
@@ -76,105 +94,23 @@ fn main() -> eframe::Result<()> {
             egui::CentralPanel::default().show(ctx, |ui| {
                 draw_heading(ui);
 
-                if !Path::try_exists(&Path::new(&yaepm_home))
-                    .expect("Could not check existence of yaepm database")
-                {
-                    if setup_db(&yaepm_home).is_err() {
-                        fatal = true;
-                        fatal_msg = "Could not create db";
-                    }
+                match ui_state {
+                    UiState::Home => {
+                        draw_home(ui, &tree, &mut ui_state)
+                    },
+                    UiState::CreateNote => {
+                        draw_create(&mut ui_state, ui, &tree, &mut new_note)
+                    },
+                    UiState::DecryptNote => {
 
-                    match read_db(&yaepm_home) {
-                        Ok(read_db) => {
-                            db = read_db;
-                        }
-                        Err(_) => {
-                            fatal = true;
-                            fatal_msg = "Could not read db";
-                        }
-                    }
-                } else {
-                    match read_db(&yaepm_home) {
-                        Ok(read_db) => {
-                            db = read_db;
-                        }
-                        Err(_) => {
-                            fatal = true;
-                            fatal_msg = "Could not read db";
-                        }
-                    }
-                    // Add button to create a note, if it is clicked, show a popup with a text edit field and a password field, confirmation field and a save button
-                    if ui.button("Create Note").clicked() {
-                        create_new_note = true;
-                    }
-                    if !create_new_note {
-                        // Iterate through the notes in the hashmap placing the key into a scrollable list
-                        egui::ScrollArea::vertical()
-                            .max_height(100.0)
-                            .show(ui, |ui| {
-                                // Add a lot of widgets here.
-                                for (key, value) in db.notes.iter() {
-                                    ui.label(key.clone());
-                                }
-                                if db.notes.iter().len() == 0 {
-                                    ui.label("No notes found");
-                                }
-                            });
-                    }
+                    },
+                    UiState::Error(error_message) => {
+
+                    },
                 }
-                if fatal {
-                    ui.label(RichText::new(fatal_msg.to_string()).color(Color32::RED));
-                }
-
-                if create_new_note {
-                    ui.label("Note Name");
-                    ui.text_edit_singleline(&mut note_name);
-                    ui.label("Note Content");
-                    ui.text_edit_multiline(&mut note_content);
-                    ui.label("Password");
-                    ui.text_edit_singleline(&mut password);
-                    ui.label("Password Confirmation");
-                    ui.text_edit_singleline(&mut password_confirmation);
-                    if ui.button("Save").clicked() {
-                        if password == password_confirmation {
-                            let timestamp_millis = SystemTime::now()
-                                .duration_since(SystemTime::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs();
-
-                            // Encrypt the note content
-                            let mut key = Key::default();
-                            for byte in password.as_bytes() {
-                                key.fill(*byte);
-                            }
-                            let cipher = ChaCha20Poly1305::new(&key);
-                            let mut nonce = Nonce::default();
-
-                            // Loop through the timestamp_millis and use nonce.fill to fill the nonce with the bytes
-                            for byte in timestamp_millis.to_be_bytes() {
-                                nonce.fill(byte);
-                            }
-
-                            let ciphertext =
-                                cipher.encrypt(&nonce, note_content.as_bytes()).unwrap();
-
-                            db.notes
-                                .insert(note_name.clone(), (timestamp_millis,ciphertext.to_vec()));
-
-                            // Open the file and write the encrypted note to it
-                            let mut file =
-                                File::create(&yaepm_home).expect("Could not open yaepm database");
-                            file.write_all(serde_json::to_string(&db).unwrap().as_bytes())
-                                .expect("Could not write to yaepm database");
-
-                            db = read_db(&yaepm_home).unwrap();
-                        } else {
-                            fatal = true;
-                            fatal_msg = "Passwords do not match";
-                        }
-                    }
-                }
-
+        
+                // Add button to create a note, if it is clicked, show a popup with a text edit field and a password field, confirmation field and a save button
+  
                 //let db:Db=open(&yaepm_home).expect(&format!("Could not open yaepm database at: {}",yaepm_home));
 
                 /*
