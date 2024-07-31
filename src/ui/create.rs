@@ -1,56 +1,72 @@
-use std::{fs::File, io::Write, time::SystemTime};
-
-use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Key, KeyInit, Nonce};
+use chacha20poly1305::{
+    aead::{Aead, OsRng},
+    AeadCore, ChaCha20Poly1305, Key, KeyInit, Nonce,
+};
 use eframe::egui::{self, TextEdit};
+use password_hash::SaltString;
 use sled::Tree;
 
-use crate::{db::set, NewNote, UiState};
+use crate::{db::set, Message, Note, TextBuffers};
+use pbkdf2::pbkdf2_hmac;
+use sha2::Sha256;
 use zeroize::Zeroize;
 
-pub fn draw_create(ui_state:&mut UiState ,ui: &mut egui::Ui, tree: &Tree, note: &mut NewNote) {
-    ui.label("Note Name");
-    ui.text_edit_singleline(&mut note.name);
-    ui.label("Note Content");
-    TextEdit::multiline(&mut note.content).vertical_align(align)
-    ui.text_edit_multiline(&mut note.content);
-    ui.label("Password");
-    ui.text_edit_singleline(&mut note.password);
-    
-    if ui.button("Save").clicked() {
-        let timestamp_millis = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+pub fn draw_create(ui: &mut egui::Ui, tree: &Tree, note: &mut Note,buffers:&mut TextBuffers, message:&mut Message) {
+    egui::ScrollArea::vertical().show(ui, |ui| {
+        ui.label("Note Name");
+        TextEdit::singleline(&mut buffers.name)
+            .desired_width(f32::INFINITY)
+            .char_limit(15)
+            .show(ui);
 
-        // Encrypt the note content
-        let mut key = Key::default();
-        for byte in note.password.as_bytes() {
-            key.fill(*byte);
-        }
-        let cipher = ChaCha20Poly1305::new(&key);
-        let mut nonce = Nonce::default();
+        ui.label("Note Content");
+        TextEdit::multiline(&mut buffers.content)
+            .desired_width(f32::INFINITY)
+            .desired_rows(5)
+            .char_limit(500)
+            .show(ui);
 
-        // Loop through the timestamp_millis and use nonce.fill to fill the nonce with the bytes
-        for byte in timestamp_millis.to_be_bytes() {
-            nonce.fill(byte);
-        }
+        ui.label("Password");
+        TextEdit::singleline(&mut buffers.password)
+            .desired_width(f32::INFINITY)
+            .password(true)
+            .show(ui);
 
-        let ciphertext = cipher.encrypt(&nonce, note.content.as_bytes()).unwrap();
-        let ciphertext: Vec<u8> = ciphertext.to_vec();
+        if ui.button("Save").clicked() {
+            *message=Message::Pending("Encrypting...");
+            
+            let salt = SaltString::generate(&mut OsRng);
+            salt.as_str().as_bytes().clone_into(&mut note.salt);
 
-        // Insert the encrypted note into the database
-        match set::<(u64,Vec<u8>)>(tree, &note.name, &(timestamp_millis, ciphertext)) {
-            Ok(_) => {
-                // Clear the note content and password fields
-                note.name.zeroize();
-                note.content.zeroize();
-                note.password.zeroize();
-            },
-            Err(error) => {
-                *ui_state = UiState::Error("Could not save note");
-                log::error!("Could not save note: {}", error);
-            }
+            note.nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng)
+                .as_slice()
+                .to_vec(); // 96-bits; unique per message
         
+            // number of iterations
+            let n = 600_000;
+            let mut encryption_key = [0u8; 32];
+            pbkdf2_hmac::<Sha256>(buffers.password.as_bytes(), &note.salt, n, &mut encryption_key);
+            buffers.password.zeroize();
+
+            let cipher = ChaCha20Poly1305::new(Key::from_slice(&encryption_key));
+            note.encrypted = cipher
+                .encrypt(Nonce::from_slice(&note.nonce), buffers.content.as_bytes())
+                .unwrap();
+            buffers.content.zeroize();
+
+            // Insert the encrypted note into the database
+            match set::<Note>(tree, &buffers.name, note) {
+                Ok(_) => {
+                    buffers.name.zeroize();
+                    *message=Message::Success("Encryption successful");
+                }
+
+                Err(error) => {
+                    *message=Message::Error("Could not save note");
+                    log::error!("Could not save note: {}", error);
+
+                }
+            }
         }
-    }
+    });
 }

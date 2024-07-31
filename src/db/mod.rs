@@ -1,5 +1,4 @@
-use std::{collections::HashMap, f32::consts::E, fs::File, io::{Error, Read, Write}, time::SystemTime};
-use chacha20poly1305::{aead::Aead, ChaCha20Poly1305, Key, KeyInit, Nonce};
+use std::collections::HashMap;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 #[derive(Serialize,Deserialize)]
@@ -27,10 +26,7 @@ pub enum DatabaseError {
     SledError(#[from] sled::Error),
 }
 
-/// Retrieve a value by key from a tree.
-fn get_from_tree(db: &Tree, key: &str) -> Result<Vec<u8>, DatabaseError> {
-    Ok(db.get(key)?.ok_or(DatabaseError::NotFound)?.to_vec())
-}
+
 /// Retrieve all key,value pairs from a specified tree
 fn get_all_from_tree(db: &Tree) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DatabaseError> {
     db.iter()
@@ -67,18 +63,6 @@ where
         all.push((key, value));
     }
     Ok(all)
-}
-
-/// Wrapper for retrieving a value from a tree
-pub fn get<T>(tree: &Tree, key: &str) -> Result<T, DatabaseError>
-where
-    T: DeserializeOwned,
-{
-    let binary_data = get_from_tree(tree, key)?;
-    bincode::deserialize::<T>(&binary_data).map_err(|error| {
-        log::error!("Db Interaction Error: {}", error);
-        DatabaseError::Deserialize
-    })
 }
 
 /// Sets a value to a tree
