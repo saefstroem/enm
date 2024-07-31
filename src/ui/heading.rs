@@ -1,6 +1,8 @@
 use eframe::egui::{Color32, RichText, Ui};
 
-pub fn draw_heading(ui:&mut Ui) {
+pub fn draw_heading(ui: &mut Ui) {
+
+
     ui.label(
         RichText::new("YAEPM")
             .italics()

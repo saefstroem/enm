@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::collections::HashMap;
 
-#[derive(Serialize,Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct YaepmDb {
-    pub notes:HashMap<String,(u64,Vec<u8>)>
+    pub notes: HashMap<String, (u64, Vec<u8>)>,
 }
 use sled::Tree;
 use thiserror::Error;
@@ -26,18 +26,28 @@ pub enum DatabaseError {
     SledError(#[from] sled::Error),
 }
 
+pub struct KVPair {
+    pub key: String,
+    pub value: Vec<u8>,
+}
 
 /// Retrieve all key,value pairs from a specified tree
-fn get_all_from_tree(db: &Tree) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DatabaseError> {
-    db.iter()
-        .map(|res| {
-            res.map_err(|error| {
+fn get_all_from_tree(db: &Tree) -> Result<Vec<KVPair>, DatabaseError> {
+    let mut all = Vec::new();
+    for result in db.iter() {
+        let (key, value) = result.map_err(|error| {
+            log::error!("Db Interaction Error: {}", error);
+            DatabaseError::Get
+        })?;
+        all.push(KVPair {
+            key: String::from_utf8(key.to_vec()).map_err(|error| {
                 log::error!("Db Interaction Error: {}", error);
-                DatabaseError::Get
-            })
-            .map(|(key, value)| (key.to_vec(), value.to_vec()))
-        })
-        .collect()
+                DatabaseError::Deserialize
+            })?,
+            value: value.to_vec(),
+        });
+    }
+    Ok(all)
 }
 
 /// Wrapper for retrieving all key value pairs from a tree
@@ -47,20 +57,14 @@ where
 {
     let binary_data = get_all_from_tree(tree)?;
     let mut all = Vec::with_capacity(binary_data.len());
-    for (binary_key, binary_value) in binary_data {
-        // Convert binary key to String
-        let key = String::from_utf8(binary_key.to_vec()).map_err(|error| {
-            log::error!("Db Interaction Error: {}", error);
-            DatabaseError::Deserialize
-        })?;
-
+    for pair in binary_data {
         // Deserialize binary value to invoice
-        let value = bincode::deserialize::<T>(&binary_value).map_err(|error| {
+        let value = bincode::deserialize::<T>(&pair.value).map_err(|error| {
             log::error!("Db Interaction Error: {}", error);
             DatabaseError::Deserialize
         })?;
 
-        all.push((key, value));
+        all.push((pair.key, value));
     }
     Ok(all)
 }
@@ -85,8 +89,7 @@ where
         log::error!("Db Interaction Error: {}", error);
         DatabaseError::Serialize
     })?;
-    set_to_tree(tree, key, binary_data)
-        .map_err(|_| DatabaseError::Communicate)?;
+    set_to_tree(tree, key, binary_data).map_err(|_| DatabaseError::Communicate)?;
     Ok(())
 }
 
