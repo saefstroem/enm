@@ -68,9 +68,9 @@ fn main() -> eframe::Result<()> {
     // The DB is a tree.
     let yaepm_tree = env::var("YAEPM_TREE").unwrap_or("passwords".to_owned());
     let db = sled::open(yaepm_home).expect("Could not open yaepm database");
-    let tree = db
-        .open_tree(yaepm_tree)
-        .unwrap_or_else(|_| panic!("Could not open tree"));
+    let senma_home = env::var("SENMA_HOME").unwrap_or(format!("{}/.senma", user_home));
+ 
+
 
     // Setup the window options for the application
     let options = eframe::NativeOptions {
