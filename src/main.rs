@@ -64,11 +64,11 @@ fn main() -> eframe::Result<()> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let user_home = env::var("HOME").unwrap_or_default();
     // Directory of db
-    let yaepm_home = env::var("YAEPM_HOME").unwrap_or(format!("{}/yaepm", user_home));
     // The DB is a tree.
     let yaepm_tree = env::var("YAEPM_TREE").unwrap_or("passwords".to_owned());
     let db = sled::open(yaepm_home).expect("Could not open yaepm database");
     let senma_home = env::var("SENMA_HOME").unwrap_or(format!("{}/.senma", user_home));
+    let senma_home = env::var("ENMA_HOME").unwrap_or(format!("{}/.senma", user_home));
  
 
 
