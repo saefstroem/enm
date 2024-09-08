@@ -1,12 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(rustdoc::missing_crate_level_docs)] // it's an example
 
-use eframe::{egui::{self, Button, Color32, IconData, RichText}, epaint::image};
+use eframe::egui::{self, Button, Color32, IconData, RichText};
 use ::image::load_from_memory;
 use serde::{Deserialize, Serialize};
 use storage::Note;
 use ui::{create::draw_create, decrypt::draw_decrypt, heading::draw_heading, list::draw_list};
-use zeroize::ZeroizeOnDrop;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 mod storage;
 mod ui;
 
@@ -42,7 +42,7 @@ impl Default for Message {
     }
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Default, Clone, Serialize, Deserialize,Zeroize)]
 pub struct TextBuffers {
     pub name: String,
     pub password: String,
@@ -67,6 +67,8 @@ fn main() -> eframe::Result<()> {
                 width,
                 height
             }),
+            follow_system_theme:false,
+            default_theme:eframe::Theme::Dark,
         ..Default::default()
     };
 
@@ -77,6 +79,8 @@ fn main() -> eframe::Result<()> {
     let mut message = Message::default();
 
     let mut buffers = TextBuffers::default();
+
+    let mut confirm_delete=String::new();
 
     let native_green=Color32::from_hex("#34fe40").unwrap_or(Color32::LIGHT_GREEN);
 
@@ -93,10 +97,12 @@ fn main() -> eframe::Result<()> {
                         .fill(native_green);
                     let add_button = Button::new(RichText::new(" + ").color(Color32::BLACK))
                         .fill(native_green);
+                    
                     if ui.add(home_button).clicked() {
                         message = Message::default();
                         ui_state = UiState::List;
                     }
+                    
                     if ui.add(add_button).clicked() {
                         message = Message::default();
                         ui_state = UiState::Create;
@@ -120,8 +126,10 @@ fn main() -> eframe::Result<()> {
 
                 // Depending on the current state, a different UI is displayed.
                 match &mut ui_state {
-                    UiState::List => draw_list(ui, &mut ui_state, &mut message),
-                    UiState::Create => draw_create(ui, &mut buffers, &mut message),
+                    UiState::List => draw_list(ui, &mut ui_state, &mut message, &mut confirm_delete),
+                    UiState::Create => {
+                        draw_create(ui, &mut buffers, &mut message);
+                    },
                     UiState::Decrypt(ref note) => {
                         let note_clone = note.clone();
                         draw_decrypt(&mut ui_state, ui, note_clone, &mut buffers, &mut message);

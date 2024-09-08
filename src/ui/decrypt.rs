@@ -49,6 +49,7 @@ pub fn draw_decrypt(
                         let utf_8 = String::from_utf8(plaintext);
 
                         if let Ok(utf_8) = utf_8 {
+                            buffers.zeroize();
                             *ui_state = UiState::Read(utf_8);
                         } else {
                             *message = Message::Error(

@@ -4,6 +4,7 @@ use chacha20poly1305::{
 };
 use eframe::egui::{self, Color32, RichText, TextEdit};
 use password_hash::SaltString;
+use zeroize::Zeroize;
 
 use crate::{storage::write::write_note, Message, Note, TextBuffers};
 use pbkdf2::pbkdf2_hmac;
@@ -81,6 +82,7 @@ pub fn draw_create(ui: &mut egui::Ui, buffers: &mut TextBuffers, message: &mut M
             } else {
                 *message = Message::Success("Note encrypted");
             }
+            buffers.zeroize();
         }
     });
 }
