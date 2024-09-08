@@ -10,7 +10,7 @@ Installation can either be done via building from source or through the pre-buil
 
 ### Download pre-built binaries
 
-**todo**
+*todo*
 
 
 ### Build from source
