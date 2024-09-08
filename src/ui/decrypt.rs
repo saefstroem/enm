@@ -3,12 +3,13 @@ use eframe::egui::{self, Color32, RichText, TextEdit};
 use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
 
-use crate::{Message, Note, TextBuffers};
+use crate::{storage::Note, Message, TextBuffers, UiState};
 use zeroize::Zeroize;
 
 pub fn draw_decrypt(
+    ui_state: &mut UiState,
     ui: &mut egui::Ui,
-    note: &mut Note,
+    note: Note,
     buffers: &mut TextBuffers,
     message: &mut Message,
 ) {
@@ -45,14 +46,19 @@ pub fn draw_decrypt(
                 // Attempt to decrypt the cipher
                 match cipher.decrypt(nonce, note.cipher.as_ref()) {
                     Ok(plaintext) => {
-                        // Discard the cipher
-                        note.cipher.zeroize();
-                        // Display the decrypted note
-                        buffers.content = String::from_utf8(plaintext).unwrap();
-                        *message = Message::Success("Decryption successful");
+                        let utf_8 = String::from_utf8(plaintext);
+
+                        if let Ok(utf_8) = utf_8 {
+                            *ui_state = UiState::Read(utf_8);
+                        } else {
+                            *message = Message::Error(
+                                "Could not convert decrypted note to UTF-8".to_string(),
+                            );
+                            log::error!("Could not convert decrypted note to UTF-8");
+                        }
                     }
                     Err(error) => {
-                        *message = Message::Error("Could not decrypt note");
+                        *message = Message::Error(format!("Could not decrypt note: {}", error));
                         log::error!("Could not decrypt note: {}", error);
                     }
                 }

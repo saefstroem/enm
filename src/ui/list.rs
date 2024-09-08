@@ -1,25 +1,19 @@
-use eframe::egui::{self, Color32, RichText, Separator};
-use sled::Tree;
+use eframe::egui::{self, Button, Color32, RichText, Separator};
 
 use crate::{
-    db::{delete, get_all, DatabaseError},
-    Message, Note, UiState,
+    storage::{delete::delete_note, read::read_notes},
+    Message, UiState,
 };
 
-pub fn draw_home(
-    ui: &mut egui::Ui,
-    db: &Tree,
-    ui_state: &mut UiState,
-    note: &mut Note,
-    message: &mut Message,
-) {
+pub fn draw_list(ui: &mut egui::Ui, ui_state: &mut UiState, message: &mut Message) {
     ui.label(RichText::new("Your notes").size(14.0).underline());
 
     egui::ScrollArea::vertical()
         .max_height(f32::INFINITY)
         .show(ui, |ui| {
-            match get_all::<Note>(db) {
-                Ok(notes) => {
+            match read_notes() {
+                Ok(storage) => {
+                    let notes = storage.notes;
                     if notes.is_empty() {
                         ui.label("No notes found");
                     }
@@ -34,32 +28,30 @@ pub fn draw_home(
                                 ui.add(Separator::default().vertical());
                                 ui.add_space(total_width - 115.0);
                                 let decrypt_button = ui.button("Decrypt");
-                                let delete_button = ui.button(
-                                    RichText::new(" X ")
-                                        .background_color(Color32::LIGHT_RED)
-                                        .color(Color32::BLACK),
-                                );
+                                let delete_button =
+                                    Button::new(RichText::new(" X ").color(Color32::BLACK))
+                                        .fill(Color32::LIGHT_RED);
+
                                 if decrypt_button.clicked() {
-                                    *note = encrypted_note;
                                     *message = Message::default();
-                                    *ui_state = UiState::DecryptNote;
+                                    *ui_state = UiState::Decrypt(encrypted_note);
                                 }
-                                if delete_button.clicked() && delete(db, &key).is_err() {
-                                    *message = Message::Error("Could not delete note");
+                                if ui.add(delete_button).clicked() {
+                                    let _ = delete_note(key).map_err(|err| {
+                                        *message = Message::Error(format!(
+                                            "Could not delete note {}",
+                                            err
+                                        ));
+                                    });
                                 }
                             });
                         });
                         ui.separator();
                     }
                 }
-                Err(error) => match error {
-                    DatabaseError::NotFound => {
-                        ui.label("No notes found");
-                    }
-                    _ => {
-                        *message = Message::Error("Could not get notes from database");
-                    }
-                },
+                Err(error) => {
+                    *message = Message::Error(format!("Could not read notes: {:?}", error));
+                }
             }
         });
 }
