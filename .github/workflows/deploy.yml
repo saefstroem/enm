@@ -47,11 +47,6 @@ jobs:
           cargo build --release
           mkdir bin || true
           cp target/release/enm.exe bin/
-          archive="bin/enm-${{ github.event.release.tag_name }}-linux-gnu-amd64.zip"
-          asset_name="enm-${{ github.event.release.tag_name }}-linux-gnu-amd64.zip"
-          zip -r "${archive}" ./bin/*
-          echo "archive=${archive}" >> $GITHUB_ENV
-          echo "asset_name=${asset_name}" >> $GITHUB_ENV
           archive="bin/enm-${{ github.event.release.tag_name }}-win64.zip"
           asset_name="enm-${{ github.event.release.tag_name }}-win64.zip"
           powershell "Compress-Archive bin/* \"${archive}\""
