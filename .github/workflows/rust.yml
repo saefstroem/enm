@@ -1,10 +1,8 @@
-name: Rust
-
+name: Build and upload assets
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  release:
+    types: [ published ]
+
 
 env:
   CARGO_TERM_COLOR: always
