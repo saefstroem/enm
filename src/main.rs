@@ -69,6 +69,7 @@ fn main() -> eframe::Result<()> {
             }),
             follow_system_theme:false,
             default_theme:eframe::Theme::Dark,
+            
         ..Default::default()
     };
 
